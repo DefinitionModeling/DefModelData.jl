@@ -8,7 +8,8 @@ using InteractiveUtils
 begin
 	using DataDeps
 	using WordNet
-	
+
+	using CSV
 	using DataFrames
 	using Statistics
 	using WordTokenizers
@@ -16,6 +17,11 @@ end
 
 # ╔═╡ fb96a818-9397-479d-98d9-02db236c4ee7
 ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
+
+# ╔═╡ bd240b14-11bf-4c69-957a-b09cefc402e1
+md"""
+# GCIDE Unfiltered
+"""
 
 # ╔═╡ a98e5705-65fa-46f7-a814-16829d85eb25
 begin
@@ -29,6 +35,9 @@ begin
 		post_fetch_method=(file -> unpack(file))
 	))
 end
+
+# ╔═╡ 7a699b59-3c58-4e09-bd62-85ece9fe169c
+datadep"GCIDE"
 
 # ╔═╡ 7bf8323c-cb1d-4c0b-a64a-b645359df274
 function readGCIDE(s)
@@ -68,6 +77,120 @@ function readGCIDEAll()
 	end
 	return res
 end
+
+# ╔═╡ 9583cea8-3073-416f-aafd-7366dfc331de
+md"""
+# Ishiwatari
+"""
+
+# ╔═╡ e2d6cbdd-9fec-4ecf-881f-9a590a26feb7
+begin
+	register(DataDep(
+		"Ishiwatari",
+		"""
+		Dataset: Ishiwatari
+		Website: https://github.com/DefinitionModeling/ishiwatari-naacl2019
+		""",
+		"http://www.tkl.iis.u-tokyo.ac.jp/~ishiwatari/naacl_data.zip",
+		"d8775ea04757c9281f13e9a45ef5234eec5f9eea91b5411ea0781a93e3a134b2",
+		post_fetch_method=(file -> unpack(file))
+	))
+end
+
+# ╔═╡ 14ca9b7c-67ad-4d00-9d56-bd528479c0a7
+datadep"Ishiwatari"
+
+# ╔═╡ 1fd2fe2d-f632-46d7-abe7-1f19f5ca55be
+function readIshiwatari(dataset::String)
+	# open file
+	ishi = string(datadep"Ishiwatari", "/data")
+	file = string(ishi, "/$(dataset)/train.txt")
+	df = DataFrame(CSV.File(file, delim="\t", header=[
+		"word", "pos", "source", "definition", "con", "desc",
+	]))
+
+	# remove extra word info
+	re = r"%(.*)"
+	df = transform(
+		df,
+		:word => ByRow(x -> replace(
+			x,
+			match(re, x).match => "",
+		)) => :word,
+	)
+
+	# get polyseme column
+	gdf = groupby(df, :word)
+	polys = combine(gdf) do sdf
+		DataFrame(polyseme = length(sdf.definition) > 1 ? true : false)
+	end
+
+	df = transform(
+		df,
+		:word => ByRow(x -> filter(:word => ==(x), polys).polyseme[1]) => :polyseme
+	)
+
+	return df
+end
+
+# ╔═╡ cfa5d699-754c-45f3-9fc5-4432919ba1be
+begin
+	dataset = "oxford"
+
+	# open file
+	ishi = string(datadep"Ishiwatari", "/data")
+	file = string(ishi, "/$(dataset)/train.txt")
+	df = DataFrame(CSV.File(file, delim="\t", header=[
+		"word", "pos", "source", "definition", "con", "desc",
+	]))
+
+	# remove extra word info
+	re = r"%(.*)"
+	df = transform(
+		df,
+		:word => ByRow(x -> replace(
+			x,
+			match(re, x).match => "",
+		)) => :word,
+	)
+
+	# get polyseme column
+	gdf = groupby(df, :word)
+	polys = combine(gdf) do sdf
+		DataFrame(polyseme = length(sdf.definition) > 1 ? true : false)
+	end
+
+	df = transform(
+		df,
+		:word => ByRow(x -> filter(:word => ==(x), polys).polyseme[1]) => :polyseme
+	)
+
+	return df
+end
+
+# ╔═╡ 1180b41f-d0b8-44ea-af19-78b75ad75102
+begin
+	polys2 = combine(gdf) do sdf
+		DataFrame(polyseme = length(sdf.definition) > 1 ? true : false)
+	end
+end
+
+# ╔═╡ 1e98f0c5-1823-40e9-9724-8d6c38dd9bdd
+begin
+	# ddf = transform(
+	# 	df, 
+	# 	:word => ByRow(x -> polys[:word])
+	# )
+	filter(:word => ==("compete"), polys2).polyseme
+end
+
+# ╔═╡ fc99e7af-096c-4a89-9fa0-32919e506262
+
+
+# ╔═╡ 35f5c943-5c54-44cd-b6ad-38639904f913
+md"""
+# Dataset Stats
+"""
 
 # ╔═╡ 55eba273-0377-4de4-8734-db66ca3e2673
 function dict_to_df(dataset::Dict)
@@ -122,11 +245,33 @@ begin
 end
 
 # ╔═╡ df0f3283-cba6-4fd4-b7bf-9f8b10724fe9
+begin
+	oxford_df = readIshiwatari("oxford")
+	dataset_stats(oxford_df)
+end
 
+# ╔═╡ e29da57b-daa1-402d-b607-a89af931398b
+begin
+	slang_df = readIshiwatari("slang")
+	dataset_stats(slang_df)
+end
+
+# ╔═╡ 9bb2b03a-da81-4e2c-8f5f-e187ac2e92a7
+begin
+	wiki_df = readIshiwatari("wiki")
+	dataset_stats(wiki_df)
+end
+
+# ╔═╡ 9b022437-ab2d-4f5e-bc8d-0e0c45a9c7bb
+begin
+	wordnet_df = readIshiwatari("wordnet")
+	dataset_stats(wordnet_df)
+end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataDeps = "124859b0-ceae-595e-8997-d05f6a7a8dfe"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
@@ -134,6 +279,7 @@ WordNet = "a945a9ba-879e-550e-aa45-2a4d52798e91"
 WordTokenizers = "796a5d58-b03d-544a-977e-18100b691f6e"
 
 [compat]
+CSV = "~0.10.3"
 DataDeps = "~0.7.7"
 DataFrames = "~1.3.2"
 WordNet = "~0.2.2"
@@ -161,6 +307,18 @@ deps = ["Libdl", "Logging", "SHA"]
 git-tree-sha1 = "ecdec412a9abc8db54c0efc5548c64dfce072058"
 uuid = "b99e7846-7c00-51b0-8f62-c81ae34c0232"
 version = "0.5.10"
+
+[[deps.CSV]]
+deps = ["CodecZlib", "Dates", "FilePathsBase", "InlineStrings", "Mmap", "Parsers", "PooledArrays", "SentinelArrays", "Tables", "Unicode", "WeakRefStrings"]
+git-tree-sha1 = "9310d9495c1eb2e4fa1955dd478660e2ecab1fbb"
+uuid = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+version = "0.10.3"
+
+[[deps.CodecZlib]]
+deps = ["TranscodingStreams", "Zlib_jll"]
+git-tree-sha1 = "ded953804d019afa9a3f98981d99b33e3db7b6da"
+uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
+version = "0.7.0"
 
 [[deps.Compat]]
 deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "SHA", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
@@ -221,6 +379,12 @@ uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 deps = ["ArgTools", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 
+[[deps.FilePathsBase]]
+deps = ["Compat", "Dates", "Mmap", "Printf", "Test", "UUIDs"]
+git-tree-sha1 = "04d13bfa8ef11720c24e4d840c0033d145537df7"
+uuid = "48062228-2e41-5def-b9a4-89aafe57970f"
+version = "0.9.17"
+
 [[deps.Formatting]]
 deps = ["Printf"]
 git-tree-sha1 = "8339d61043228fdd3eb658d86c926cb282ae72a8"
@@ -247,6 +411,12 @@ version = "0.9.17"
 git-tree-sha1 = "f550e6e32074c939295eb5ea6de31849ac2c9625"
 uuid = "83e8ac13-25f8-5344-8a64-a9f2b223428f"
 version = "0.5.1"
+
+[[deps.InlineStrings]]
+deps = ["Parsers"]
+git-tree-sha1 = "61feba885fac3a407465726d0c330b3055df897f"
+uuid = "842dd82b-1e85-43dc-bf29-5d0ee9dffc48"
+version = "1.1.2"
 
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
@@ -326,6 +496,12 @@ git-tree-sha1 = "85f8e6578bf1f9ee0d11e7bb1b1456435479d47c"
 uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 version = "1.4.1"
 
+[[deps.Parsers]]
+deps = ["Dates"]
+git-tree-sha1 = "85b5da0fa43588c75bb1ff986493443f821c70b7"
+uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
+version = "2.2.3"
+
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
@@ -361,6 +537,12 @@ version = "1.2.2"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+
+[[deps.SentinelArrays]]
+deps = ["Dates", "Random"]
+git-tree-sha1 = "6a2f7d70512d205ca8c7ee31bfa9f142fe74310c"
+uuid = "91c51154-3ec4-41a3-a24f-3f23e20d615c"
+version = "1.3.12"
 
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
@@ -416,6 +598,12 @@ uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
+[[deps.TranscodingStreams]]
+deps = ["Random", "Test"]
+git-tree-sha1 = "216b95ea110b5972db65aa90f88d8d89dcb8851c"
+uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
+version = "0.9.6"
+
 [[deps.URIs]]
 git-tree-sha1 = "97bbe755a53fe859669cd907f2d96aee8d2c1355"
 uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
@@ -427,6 +615,12 @@ uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [[deps.Unicode]]
 uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+
+[[deps.WeakRefStrings]]
+deps = ["DataAPI", "InlineStrings", "Parsers"]
+git-tree-sha1 = "b1be2855ed9ed8eac54e5caff2afcdb442d52c23"
+uuid = "ea10d353-3f73-51f8-a26c-33c1cb351aa5"
+version = "1.4.2"
 
 [[deps.WordNet]]
 deps = ["DataDeps", "Test"]
@@ -460,12 +654,26 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╔═╡ Cell order:
 # ╠═b3fe06ca-a30e-11ec-1de5-4bd280e579c6
 # ╠═fb96a818-9397-479d-98d9-02db236c4ee7
+# ╟─bd240b14-11bf-4c69-957a-b09cefc402e1
 # ╠═a98e5705-65fa-46f7-a814-16829d85eb25
+# ╠═7a699b59-3c58-4e09-bd62-85ece9fe169c
 # ╠═7bf8323c-cb1d-4c0b-a64a-b645359df274
 # ╠═f32cc1af-ded4-46c6-b986-87f6e20bcf27
+# ╟─9583cea8-3073-416f-aafd-7366dfc331de
+# ╠═e2d6cbdd-9fec-4ecf-881f-9a590a26feb7
+# ╠═14ca9b7c-67ad-4d00-9d56-bd528479c0a7
+# ╠═1fd2fe2d-f632-46d7-abe7-1f19f5ca55be
+# ╠═cfa5d699-754c-45f3-9fc5-4432919ba1be
+# ╠═1180b41f-d0b8-44ea-af19-78b75ad75102
+# ╠═1e98f0c5-1823-40e9-9724-8d6c38dd9bdd
+# ╠═fc99e7af-096c-4a89-9fa0-32919e506262
+# ╟─35f5c943-5c54-44cd-b6ad-38639904f913
 # ╠═55eba273-0377-4de4-8734-db66ca3e2673
 # ╠═e9df45c7-44aa-40bf-917f-3cd515687bc0
 # ╠═490bdd8e-04d1-4b3e-af7a-b2b63353c495
 # ╠═df0f3283-cba6-4fd4-b7bf-9f8b10724fe9
+# ╠═e29da57b-daa1-402d-b607-a89af931398b
+# ╠═9bb2b03a-da81-4e2c-8f5f-e187ac2e92a7
+# ╠═9b022437-ab2d-4f5e-bc8d-0e0c45a9c7bb
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
