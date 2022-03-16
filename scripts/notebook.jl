@@ -6,21 +6,27 @@ using InteractiveUtils
 
 # ╔═╡ b3fe06ca-a30e-11ec-1de5-4bd280e579c6
 begin
+	using Pkg
+	Pkg.activate(".")
+	
 	using DataDeps
-	using WordNet
 
 	using CSV
 	using DataFrames
 	using Statistics
-	using WordTokenizers
+	using Yawipa
+	using Latexify
 end
 
 # ╔═╡ fb96a818-9397-479d-98d9-02db236c4ee7
-ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
+begin
+	ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
+	ENV["JULIA_NUM_THREADS"] = 16
+end
 
 # ╔═╡ bd240b14-11bf-4c69-957a-b09cefc402e1
 md"""
-# GCIDE Unfiltered
+# GCIDE Unfiltered Preprocessing
 """
 
 # ╔═╡ a98e5705-65fa-46f7-a814-16829d85eb25
@@ -80,34 +86,43 @@ end
 
 # ╔═╡ 9583cea8-3073-416f-aafd-7366dfc331de
 md"""
-# Ishiwatari
+# Ishiwatari Datasets Preprocessing
 """
 
 # ╔═╡ e2d6cbdd-9fec-4ecf-881f-9a590a26feb7
-begin
-	register(DataDep(
-		"Ishiwatari",
-		"""
-		Dataset: Ishiwatari
-		Website: https://github.com/DefinitionModeling/ishiwatari-naacl2019
-		""",
-		"http://www.tkl.iis.u-tokyo.ac.jp/~ishiwatari/naacl_data.zip",
-		"d8775ea04757c9281f13e9a45ef5234eec5f9eea91b5411ea0781a93e3a134b2",
-		post_fetch_method=(file -> unpack(file))
-	))
-end
+register(DataDep(
+	"Ishiwatari",
+	"""
+	Dataset: Ishiwatari
+	Website: https://github.com/DefinitionModeling/ishiwatari-naacl2019
+	""",
+	"http://www.tkl.iis.u-tokyo.ac.jp/~ishiwatari/naacl_data.zip",
+	"d8775ea04757c9281f13e9a45ef5234eec5f9eea91b5411ea0781a93e3a134b2",
+	post_fetch_method=(file -> unpack(file))
+))
 
 # ╔═╡ 14ca9b7c-67ad-4d00-9d56-bd528479c0a7
 datadep"Ishiwatari"
 
+# ╔═╡ df58a7fa-3be6-4266-a185-6da2ce663626
+function loadSplit(dataset, split)
+	ishi = string(datadep"Ishiwatari", "/data")
+	file = string(ishi, "/$(dataset)/$(split).txt")
+	df = DataFrame(CSV.File(file, delim="\t", header=[
+		"word", "pos", "source", "definition", "con", "desc",
+	]))
+
+	return df
+end
+
 # ╔═╡ 1fd2fe2d-f632-46d7-abe7-1f19f5ca55be
 function readIshiwatari(dataset::String)
 	# open file
-	ishi = string(datadep"Ishiwatari", "/data")
-	file = string(ishi, "/$(dataset)/train.txt")
-	df = DataFrame(CSV.File(file, delim="\t", header=[
-		"word", "pos", "source", "definition", "con", "desc",
-	]))
+	df = vcat(
+		loadSplit(dataset, "train"),
+		loadSplit(dataset, "test"),
+		loadSplit(dataset, "valid"),
+	)
 
 	# remove extra word info
 	re = r"%(.*)"
@@ -125,67 +140,90 @@ function readIshiwatari(dataset::String)
 		DataFrame(polyseme = length(sdf.definition) > 1 ? true : false)
 	end
 
-	df = transform(
-		df,
-		:word => ByRow(x -> filter(:word => ==(x), polys).polyseme[1]) => :polyseme
-	)
+	return df, polys
+end
+
+# ╔═╡ 4b2cc8b0-98d7-4b32-a521-e4fa440172f9
+begin
+	ishi = string(datadep"Ishiwatari", "/data")
+	for file in ["train", "test", "valid"]
+		out_path = string(ishi, "/slang2")
+		mkpath(out_path)
+		
+		out_file = string(out_path, "/$(file).txt")
+		if !isfile(out_path)
+			in_file = string(ishi, "/slang/$(file).txt")
+
+			# remove all quotes
+			s = open(f->read(f, String), in_file)
+			s = replace(s, "\"" => "")
+			open(out_file, "w") do io
+				write(io, s)
+			end
+		end
+	end
+end
+
+# ╔═╡ 0cc11185-d090-452e-8f91-e6db9bcbce59
+md"""
+# Wiktionary Preprocessing
+"""
+
+# ╔═╡ 8b0337d5-9c16-428e-830d-ab116c5eb28c
+register(DataDep("Wiktionary",
+        """
+        Dataset: Wiktionary
+        Website: https://en.wiktionary.org/
+        """,
+        "https://dumps.wikimedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2",
+        "1a86e2966f5195beeab5953e865b183a5d7f0408e3fccb4da79cf6190c7c34df";
+        post_fetch_method=(file -> unpack(file, keep_originals=true))
+))
+
+# ╔═╡ af4fc4a1-b36e-458a-b704-0f3f0628d4fa
+datadep"Wiktionary"
+
+# ╔═╡ 170dfc16-66bf-4055-a226-f37cfd3ad368
+function readWiktionary()
+	out_path = string(datadep"Wiktionary", "/dataset")
+	mkpath(out_path)
+	
+	out_file = string(out_path, "/yawipa.csv")
+	if !isfile(out_file)
+		Yawipa.parse(
+			datadep"Wiktionary/enwiktionary-latest-pages-articles.xml",
+			"en",
+			string(out_file),
+			string(out_path, "/yawipa.log"),
+			".*:.*",
+			["def"]
+		)
+	end
+
+	df = DataFrame(CSV.File(out_file, delim="\t", header=[
+		"lang", "word", "pos", "type", "definition", "info",
+	]))
 
 	return df
 end
 
-# ╔═╡ cfa5d699-754c-45f3-9fc5-4432919ba1be
-begin
-	dataset = "oxford"
-
-	# open file
-	ishi = string(datadep"Ishiwatari", "/data")
-	file = string(ishi, "/$(dataset)/train.txt")
-	df = DataFrame(CSV.File(file, delim="\t", header=[
-		"word", "pos", "source", "definition", "con", "desc",
-	]))
-
-	# remove extra word info
-	re = r"%(.*)"
-	df = transform(
-		df,
-		:word => ByRow(x -> replace(
-			x,
-			match(re, x).match => "",
-		)) => :word,
-	)
-
+# ╔═╡ 6be8b9b0-455f-4aa5-980e-27d19d6cf769
+function readWiktionaryProcessed(lang::String)
+	df = readWiktionary()
+	
+	# filter missing data
+	df = select(df, [:lang, :word, :definition])
+	df = dropmissing(df)
+	df = filter(:lang => ==(lang), df)
+	
 	# get polyseme column
 	gdf = groupby(df, :word)
 	polys = combine(gdf) do sdf
 		DataFrame(polyseme = length(sdf.definition) > 1 ? true : false)
 	end
-
-	df = transform(
-		df,
-		:word => ByRow(x -> filter(:word => ==(x), polys).polyseme[1]) => :polyseme
-	)
-
-	return df
+	
+	return df, polys
 end
-
-# ╔═╡ 1180b41f-d0b8-44ea-af19-78b75ad75102
-begin
-	polys2 = combine(gdf) do sdf
-		DataFrame(polyseme = length(sdf.definition) > 1 ? true : false)
-	end
-end
-
-# ╔═╡ 1e98f0c5-1823-40e9-9724-8d6c38dd9bdd
-begin
-	# ddf = transform(
-	# 	df, 
-	# 	:word => ByRow(x -> polys[:word])
-	# )
-	filter(:word => ==("compete"), polys2).polyseme
-end
-
-# ╔═╡ fc99e7af-096c-4a89-9fa0-32919e506262
-
 
 # ╔═╡ 35f5c943-5c54-44cd-b6ad-38639904f913
 md"""
@@ -213,443 +251,169 @@ function dataset_stats(dataset)
 	num_definitions = length(dataset.definition)
 	definitions_per_word = num_definitions/num_words
 
-	# get average definition length by number of tokens
-	dataset = transform(
-		dataset,
-		:definition => ByRow(x -> length(tokenize(x))) => :definition_length,
-	)
-	average_definition_length = mean(dataset.definition_length)
-
-	# get number of definitions which consist of greater than three tokens
-	dataset = filter(row -> row.definition_length > 3, dataset)
-	num_defintions_gt3 = mean(dataset.definition_length)
-
-	# get number of polysemous words
-	polys = unique(dataset, [:word, :polyseme])
-	num_polysemes = length(filter(row -> row.polyseme, dataset).polyseme)
-	
-	return Dict{String, Float64}(
+	return Dict{String, Any}(
 		"num_words"=>num_words,
 		"num_definitions"=>num_definitions,
-		"num_polysemes"=>num_polysemes,
-		"definitions_per_word"=>definitions_per_word,
-		"average_definition_length (tokens)"=>average_definition_length,
+		"definitions_per_word"=>round(definitions_per_word, digits=3),
 	)
 end
 
-# ╔═╡ 490bdd8e-04d1-4b3e-af7a-b2b63353c495
-begin
-	# GCIDE
-	gcide_df = dict_to_df(readGCIDEAll())
-	dataset_stats(gcide_df)
+# ╔═╡ 23a8c3a1-ece4-4971-b818-686eb95c7608
+function polyseme_stats(df::DataFrame)
+	num_words = length(unique(df.word))
+	
+	# get number of polysemous words
+	num_polysemes = length(filter(row -> row.polyseme, df).polyseme)
+
+	return Dict{String, Float64}(
+		"num_polysemes"=>num_polysemes,
+		"polyseme_ratio"=>round(num_polysemes/num_words, digits=3),
+	)
 end
+
+# ╔═╡ ae799722-2a64-4716-b2ab-de4fa0072261
+md"""
+## GCIDE Stats
+"""
+
+# ╔═╡ ff7bac23-36fa-4508-8737-817978d00cec
+gcide_df = dict_to_df(readGCIDEAll());
+
+# ╔═╡ 3acf9f9f-777a-4a30-9521-775ddb0fd567
+begin
+	gcide_stats = merge(dataset_stats(gcide_df), polyseme_stats(gcide_df))
+	gcide_stats["dataset"] = "gcide"
+	gcide_stats
+end
+
+# ╔═╡ f41e66e3-86dd-4822-bcb9-c8f133f6a355
+md"""
+## Oxford Stats
+"""
 
 # ╔═╡ df0f3283-cba6-4fd4-b7bf-9f8b10724fe9
+oxford_df, oxford_poly = readIshiwatari("oxford");
+
+# ╔═╡ 95e15a38-c17d-4365-8bc0-0774cdfb3127
 begin
-	oxford_df = readIshiwatari("oxford")
-	dataset_stats(oxford_df)
+	oxford_stats = merge(dataset_stats(oxford_df), polyseme_stats(oxford_poly))
+	oxford_stats["dataset"] = "oxford"
+	oxford_stats
 end
 
-# ╔═╡ e29da57b-daa1-402d-b607-a89af931398b
-begin
-	slang_df = readIshiwatari("slang")
-	dataset_stats(slang_df)
-end
-
-# ╔═╡ 9bb2b03a-da81-4e2c-8f5f-e187ac2e92a7
-begin
-	wiki_df = readIshiwatari("wiki")
-	dataset_stats(wiki_df)
-end
-
-# ╔═╡ 9b022437-ab2d-4f5e-bc8d-0e0c45a9c7bb
-begin
-	wordnet_df = readIshiwatari("wordnet")
-	dataset_stats(wordnet_df)
-end
-
-# ╔═╡ 00000000-0000-0000-0000-000000000001
-PLUTO_PROJECT_TOML_CONTENTS = """
-[deps]
-CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
-DataDeps = "124859b0-ceae-595e-8997-d05f6a7a8dfe"
-DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
-Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
-WordNet = "a945a9ba-879e-550e-aa45-2a4d52798e91"
-WordTokenizers = "796a5d58-b03d-544a-977e-18100b691f6e"
-
-[compat]
-CSV = "~0.10.3"
-DataDeps = "~0.7.7"
-DataFrames = "~1.3.2"
-WordNet = "~0.2.2"
-WordTokenizers = "~0.5.6"
+# ╔═╡ 502dc8ac-ce8c-4fb2-9513-4cc8c7bfd25a
+md"""
+## Urban Dictionary Stats
 """
 
-# ╔═╡ 00000000-0000-0000-0000-000000000002
-PLUTO_MANIFEST_TOML_CONTENTS = """
-# This file is machine-generated - editing it directly is not advised
-
-julia_version = "1.7.2"
-manifest_format = "2.0"
-
-[[deps.ArgTools]]
-uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
-
-[[deps.Artifacts]]
-uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
-
-[[deps.Base64]]
-uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
-
-[[deps.BinaryProvider]]
-deps = ["Libdl", "Logging", "SHA"]
-git-tree-sha1 = "ecdec412a9abc8db54c0efc5548c64dfce072058"
-uuid = "b99e7846-7c00-51b0-8f62-c81ae34c0232"
-version = "0.5.10"
-
-[[deps.CSV]]
-deps = ["CodecZlib", "Dates", "FilePathsBase", "InlineStrings", "Mmap", "Parsers", "PooledArrays", "SentinelArrays", "Tables", "Unicode", "WeakRefStrings"]
-git-tree-sha1 = "9310d9495c1eb2e4fa1955dd478660e2ecab1fbb"
-uuid = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
-version = "0.10.3"
-
-[[deps.CodecZlib]]
-deps = ["TranscodingStreams", "Zlib_jll"]
-git-tree-sha1 = "ded953804d019afa9a3f98981d99b33e3db7b6da"
-uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
-version = "0.7.0"
-
-[[deps.Compat]]
-deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "SHA", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
-git-tree-sha1 = "96b0bc6c52df76506efc8a441c6cf1adcb1babc4"
-uuid = "34da2185-b29b-5c13-b0c7-acf172513d20"
-version = "3.42.0"
-
-[[deps.CompilerSupportLibraries_jll]]
-deps = ["Artifacts", "Libdl"]
-uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-
-[[deps.Crayons]]
-git-tree-sha1 = "249fe38abf76d48563e2f4556bebd215aa317e15"
-uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
-version = "4.1.1"
-
-[[deps.DataAPI]]
-git-tree-sha1 = "cc70b17275652eb47bc9e5f81635981f13cea5c8"
-uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
-version = "1.9.0"
-
-[[deps.DataDeps]]
-deps = ["BinaryProvider", "HTTP", "Libdl", "Reexport", "SHA", "p7zip_jll"]
-git-tree-sha1 = "4f0e41ff461d42cfc62ff0de4f1cd44c6e6b3771"
-uuid = "124859b0-ceae-595e-8997-d05f6a7a8dfe"
-version = "0.7.7"
-
-[[deps.DataFrames]]
-deps = ["Compat", "DataAPI", "Future", "InvertedIndices", "IteratorInterfaceExtensions", "LinearAlgebra", "Markdown", "Missings", "PooledArrays", "PrettyTables", "Printf", "REPL", "Reexport", "SortingAlgorithms", "Statistics", "TableTraits", "Tables", "Unicode"]
-git-tree-sha1 = "ae02104e835f219b8930c7664b8012c93475c340"
-uuid = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
-version = "1.3.2"
-
-[[deps.DataStructures]]
-deps = ["Compat", "InteractiveUtils", "OrderedCollections"]
-git-tree-sha1 = "3daef5523dd2e769dad2365274f760ff5f282c7d"
-uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
-version = "0.18.11"
-
-[[deps.DataValueInterfaces]]
-git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
-uuid = "e2d170a0-9d28-54be-80f0-106bbe20a464"
-version = "1.0.0"
-
-[[deps.Dates]]
-deps = ["Printf"]
-uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
-
-[[deps.DelimitedFiles]]
-deps = ["Mmap"]
-uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
-
-[[deps.Distributed]]
-deps = ["Random", "Serialization", "Sockets"]
-uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
-
-[[deps.Downloads]]
-deps = ["ArgTools", "LibCURL", "NetworkOptions"]
-uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
-
-[[deps.FilePathsBase]]
-deps = ["Compat", "Dates", "Mmap", "Printf", "Test", "UUIDs"]
-git-tree-sha1 = "04d13bfa8ef11720c24e4d840c0033d145537df7"
-uuid = "48062228-2e41-5def-b9a4-89aafe57970f"
-version = "0.9.17"
-
-[[deps.Formatting]]
-deps = ["Printf"]
-git-tree-sha1 = "8339d61043228fdd3eb658d86c926cb282ae72a8"
-uuid = "59287772-0a20-5a39-b81b-1366585eb4c0"
-version = "0.4.2"
-
-[[deps.Future]]
-deps = ["Random"]
-uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
-
-[[deps.HTML_Entities]]
-deps = ["StrTables"]
-git-tree-sha1 = "c4144ed3bc5f67f595622ad03c0e39fa6c70ccc7"
-uuid = "7693890a-d069-55fe-a829-b4a6d304f0ee"
-version = "1.0.1"
-
-[[deps.HTTP]]
-deps = ["Base64", "Dates", "IniFile", "Logging", "MbedTLS", "NetworkOptions", "Sockets", "URIs"]
-git-tree-sha1 = "0fa77022fe4b511826b39c894c90daf5fce3334a"
-uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-version = "0.9.17"
-
-[[deps.IniFile]]
-git-tree-sha1 = "f550e6e32074c939295eb5ea6de31849ac2c9625"
-uuid = "83e8ac13-25f8-5344-8a64-a9f2b223428f"
-version = "0.5.1"
-
-[[deps.InlineStrings]]
-deps = ["Parsers"]
-git-tree-sha1 = "61feba885fac3a407465726d0c330b3055df897f"
-uuid = "842dd82b-1e85-43dc-bf29-5d0ee9dffc48"
-version = "1.1.2"
-
-[[deps.InteractiveUtils]]
-deps = ["Markdown"]
-uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
-
-[[deps.InvertedIndices]]
-git-tree-sha1 = "bee5f1ef5bf65df56bdd2e40447590b272a5471f"
-uuid = "41ab1584-1d38-5bbf-9106-f11c6c58b48f"
-version = "1.1.0"
-
-[[deps.IteratorInterfaceExtensions]]
-git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
-uuid = "82899510-4779-5014-852e-03e436cf321d"
-version = "1.0.0"
-
-[[deps.LibCURL]]
-deps = ["LibCURL_jll", "MozillaCACerts_jll"]
-uuid = "b27032c2-a3e7-50c8-80cd-2d36dbcbfd21"
-
-[[deps.LibCURL_jll]]
-deps = ["Artifacts", "LibSSH2_jll", "Libdl", "MbedTLS_jll", "Zlib_jll", "nghttp2_jll"]
-uuid = "deac9b47-8bc7-5906-a0fe-35ac56dc84c0"
-
-[[deps.LibGit2]]
-deps = ["Base64", "NetworkOptions", "Printf", "SHA"]
-uuid = "76f85450-5226-5b5a-8eaa-529ad045b433"
-
-[[deps.LibSSH2_jll]]
-deps = ["Artifacts", "Libdl", "MbedTLS_jll"]
-uuid = "29816b5a-b9ab-546f-933c-edad1886dfa8"
-
-[[deps.Libdl]]
-uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
-
-[[deps.LinearAlgebra]]
-deps = ["Libdl", "libblastrampoline_jll"]
-uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-
-[[deps.Logging]]
-uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
-
-[[deps.Markdown]]
-deps = ["Base64"]
-uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
-
-[[deps.MbedTLS]]
-deps = ["Dates", "MbedTLS_jll", "Random", "Sockets"]
-git-tree-sha1 = "1c38e51c3d08ef2278062ebceade0e46cefc96fe"
-uuid = "739be429-bea8-5141-9913-cc70e7f3736d"
-version = "1.0.3"
-
-[[deps.MbedTLS_jll]]
-deps = ["Artifacts", "Libdl"]
-uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
-
-[[deps.Missings]]
-deps = ["DataAPI"]
-git-tree-sha1 = "bf210ce90b6c9eed32d25dbcae1ebc565df2687f"
-uuid = "e1d29d7a-bbdc-5cf2-9ac0-f12de2c33e28"
-version = "1.0.2"
-
-[[deps.Mmap]]
-uuid = "a63ad114-7e13-5084-954f-fe012c677804"
-
-[[deps.MozillaCACerts_jll]]
-uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
-
-[[deps.NetworkOptions]]
-uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
-
-[[deps.OpenBLAS_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
-uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
-
-[[deps.OrderedCollections]]
-git-tree-sha1 = "85f8e6578bf1f9ee0d11e7bb1b1456435479d47c"
-uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
-version = "1.4.1"
-
-[[deps.Parsers]]
-deps = ["Dates"]
-git-tree-sha1 = "85b5da0fa43588c75bb1ff986493443f821c70b7"
-uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
-version = "2.2.3"
-
-[[deps.Pkg]]
-deps = ["Artifacts", "Dates", "Downloads", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
-uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
-
-[[deps.PooledArrays]]
-deps = ["DataAPI", "Future"]
-git-tree-sha1 = "db3a23166af8aebf4db5ef87ac5b00d36eb771e2"
-uuid = "2dfb63ee-cc39-5dd5-95bd-886bf059d720"
-version = "1.4.0"
-
-[[deps.PrettyTables]]
-deps = ["Crayons", "Formatting", "Markdown", "Reexport", "Tables"]
-git-tree-sha1 = "dfb54c4e414caa595a1f2ed759b160f5a3ddcba5"
-uuid = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
-version = "1.3.1"
-
-[[deps.Printf]]
-deps = ["Unicode"]
-uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
-
-[[deps.REPL]]
-deps = ["InteractiveUtils", "Markdown", "Sockets", "Unicode"]
-uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
-
-[[deps.Random]]
-deps = ["SHA", "Serialization"]
-uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-
-[[deps.Reexport]]
-git-tree-sha1 = "45e428421666073eab6f2da5c9d310d99bb12f9b"
-uuid = "189a3867-3050-52da-a836-e630ba90ab69"
-version = "1.2.2"
-
-[[deps.SHA]]
-uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
-
-[[deps.SentinelArrays]]
-deps = ["Dates", "Random"]
-git-tree-sha1 = "6a2f7d70512d205ca8c7ee31bfa9f142fe74310c"
-uuid = "91c51154-3ec4-41a3-a24f-3f23e20d615c"
-version = "1.3.12"
-
-[[deps.Serialization]]
-uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
-
-[[deps.SharedArrays]]
-deps = ["Distributed", "Mmap", "Random", "Serialization"]
-uuid = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
-
-[[deps.Sockets]]
-uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
-
-[[deps.SortingAlgorithms]]
-deps = ["DataStructures"]
-git-tree-sha1 = "b3363d7460f7d098ca0912c69b082f75625d7508"
-uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
-version = "1.0.1"
-
-[[deps.SparseArrays]]
-deps = ["LinearAlgebra", "Random"]
-uuid = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
-
-[[deps.Statistics]]
-deps = ["LinearAlgebra", "SparseArrays"]
-uuid = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
-
-[[deps.StrTables]]
-deps = ["Dates"]
-git-tree-sha1 = "5998faae8c6308acc25c25896562a1e66a3bb038"
-uuid = "9700d1a9-a7c8-5760-9816-a99fda30bb8f"
-version = "1.0.1"
-
-[[deps.TOML]]
-deps = ["Dates"]
-uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
-
-[[deps.TableTraits]]
-deps = ["IteratorInterfaceExtensions"]
-git-tree-sha1 = "c06b2f539df1c6efa794486abfb6ed2022561a39"
-uuid = "3783bdb8-4a98-5b6b-af9a-565f29a5fe9c"
-version = "1.0.1"
-
-[[deps.Tables]]
-deps = ["DataAPI", "DataValueInterfaces", "IteratorInterfaceExtensions", "LinearAlgebra", "OrderedCollections", "TableTraits", "Test"]
-git-tree-sha1 = "5ce79ce186cc678bbb5c5681ca3379d1ddae11a1"
-uuid = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
-version = "1.7.0"
-
-[[deps.Tar]]
-deps = ["ArgTools", "SHA"]
-uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
-
-[[deps.Test]]
-deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
-uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
-[[deps.TranscodingStreams]]
-deps = ["Random", "Test"]
-git-tree-sha1 = "216b95ea110b5972db65aa90f88d8d89dcb8851c"
-uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
-version = "0.9.6"
-
-[[deps.URIs]]
-git-tree-sha1 = "97bbe755a53fe859669cd907f2d96aee8d2c1355"
-uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
-version = "1.3.0"
-
-[[deps.UUIDs]]
-deps = ["Random", "SHA"]
-uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
-
-[[deps.Unicode]]
-uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
-
-[[deps.WeakRefStrings]]
-deps = ["DataAPI", "InlineStrings", "Parsers"]
-git-tree-sha1 = "b1be2855ed9ed8eac54e5caff2afcdb442d52c23"
-uuid = "ea10d353-3f73-51f8-a26c-33c1cb351aa5"
-version = "1.4.2"
-
-[[deps.WordNet]]
-deps = ["DataDeps", "Test"]
-git-tree-sha1 = "a7a63f03bb14928edb05042ea555704890f8465e"
-uuid = "a945a9ba-879e-550e-aa45-2a4d52798e91"
-version = "0.2.2"
-
-[[deps.WordTokenizers]]
-deps = ["DataDeps", "HTML_Entities", "StrTables", "Unicode"]
-git-tree-sha1 = "01dd4068c638da2431269f49a5964bf42ff6c9d2"
-uuid = "796a5d58-b03d-544a-977e-18100b691f6e"
-version = "0.5.6"
-
-[[deps.Zlib_jll]]
-deps = ["Libdl"]
-uuid = "83775a58-1f1d-513f-b197-d71354ab007a"
-
-[[deps.libblastrampoline_jll]]
-deps = ["Artifacts", "Libdl", "OpenBLAS_jll"]
-uuid = "8e850b90-86db-534c-a0d3-1478176c7d93"
-
-[[deps.nghttp2_jll]]
-deps = ["Artifacts", "Libdl"]
-uuid = "8e850ede-7688-5339-a07c-302acd2aaf8d"
-
-[[deps.p7zip_jll]]
-deps = ["Artifacts", "Libdl"]
-uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
+# ╔═╡ 21a48539-4f67-4104-b549-2c96b5f65f00
+slang_df, slang_polys = readIshiwatari("slang2");
+
+# ╔═╡ 2dc83a51-4f54-4ff5-85bd-7df41ae2d7e1
+begin
+	slang_stats = merge(dataset_stats(slang_df), polyseme_stats(slang_polys))
+	slang_stats["dataset"] = "urban"
+	slang_stats
+end
+
+# ╔═╡ 6107b1bb-de22-4dd6-ac01-197c92309191
+md"""
+## Wikipedia Stats
 """
+
+# ╔═╡ f52cf939-28a8-4470-bfcd-89371e19951a
+wiki_df, wiki_polys = readIshiwatari("wiki");
+
+# ╔═╡ 708fcf2a-a052-4ef3-92bb-60b16a4d778e
+begin
+	wiki_stats = merge(dataset_stats(wiki_df), polyseme_stats(wiki_polys))
+	wiki_stats["dataset"] = "wikipedia"
+	wiki_stats
+end
+
+# ╔═╡ 228d1f50-81ea-40ff-a67e-5833c6900750
+md"""
+## WordNet Stats
+"""
+
+# ╔═╡ 4200aa80-052c-4611-95de-17f13e96d2e9
+wordnet_df, wordnet_polys = readIshiwatari("wordnet");
+
+# ╔═╡ 2c3e6e56-1e7e-4eb0-9000-58fdf8e127cb
+begin
+	wordnet_stats = merge(dataset_stats(wordnet_df), polyseme_stats(wordnet_polys))
+	wordnet_stats["dataset"] = "wordnet"
+	wordnet_stats
+end
+
+# ╔═╡ d2eb52c3-9916-4f5a-bece-8dbd8c898a39
+md"""
+## Wiktionary English Stats
+"""
+
+# ╔═╡ 492da372-39c3-4230-a093-90aaf4f5621c
+wiktionary_eng_df, wiktionary_eng_polys = readWiktionaryProcessed("eng");
+
+# ╔═╡ 8f441a35-b518-4a5c-a49b-f19d9ed2eef2
+begin
+	wiktionary_eng_stats = merge(dataset_stats(wiktionary_eng_df), polyseme_stats(wiktionary_eng_polys))
+	wiktionary_eng_stats["dataset"] = "wiktionary_eng"
+	wiktionary_eng_stats
+end
+
+# ╔═╡ 3df8ef4c-d0af-4729-b4e2-80a3cc276afd
+md"""
+## Wiktionary French Stats
+"""
+
+# ╔═╡ b99d1a54-20a6-4a73-bd8a-68ebec951e33
+wiktionary_fra_df, wiktionary_fra_polys = readWiktionaryProcessed("fra");
+
+# ╔═╡ 9c2450e6-6c24-4e12-a7c9-30264f86ec9c
+begin
+	wiktionary_fra_stats = merge(dataset_stats(wiktionary_fra_df), polyseme_stats(wiktionary_fra_polys))
+	wiktionary_fra_stats["dataset"] = "wiktionary_fra"
+	wiktionary_fra_stats
+end
+
+# ╔═╡ f56acc68-b977-4cf6-a3d1-1c6c7169fb39
+md"""
+## Wiktionary German Stats
+"""
+
+# ╔═╡ 4d37f97b-cbe0-4119-9eb8-d461ec887b52
+wiktionary_deu_df, wiktionary_deu_polys = readWiktionaryProcessed("deu");
+
+# ╔═╡ 31d0f61d-3a8d-40c6-bcd4-ff80db9b04e9
+begin
+	wiktionary_deu_stats = merge(dataset_stats(wiktionary_deu_df), polyseme_stats(wiktionary_deu_polys))
+	wiktionary_deu_stats["dataset"] = "wiktionary_fra"
+	wiktionary_deu_stats
+end
+
+# ╔═╡ 5218330b-1a04-4ac6-a140-2656791b8984
+stats_df = select(
+	vcat(
+		DataFrame(gcide_stats),
+		DataFrame(oxford_stats),
+		DataFrame(wordnet_stats),
+		DataFrame(wiki_stats),
+		DataFrame(slang_stats),
+		DataFrame(wiktionary_eng_stats),
+	), [
+		:dataset, :num_words, :num_definitions, :definitions_per_word, :num_polysemes, :polyseme_ratio
+	]
+)
+
+# ╔═╡ 3f609a12-99d8-4c5b-af3c-326a34e690b4
+res = latexify(stats_df, env=:table)
+
+# ╔═╡ 73796904-eaf6-47f2-b8e7-2ac537764848
+vcat(
+	DataFrame(wiktionary_eng_stats),
+	DataFrame(wiktionary_fra_stats),
+	DataFrame(wiktionary_deu_stats),
+)
 
 # ╔═╡ Cell order:
 # ╠═b3fe06ca-a30e-11ec-1de5-4bd280e579c6
@@ -662,18 +426,42 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─9583cea8-3073-416f-aafd-7366dfc331de
 # ╠═e2d6cbdd-9fec-4ecf-881f-9a590a26feb7
 # ╠═14ca9b7c-67ad-4d00-9d56-bd528479c0a7
+# ╠═df58a7fa-3be6-4266-a185-6da2ce663626
 # ╠═1fd2fe2d-f632-46d7-abe7-1f19f5ca55be
-# ╠═cfa5d699-754c-45f3-9fc5-4432919ba1be
-# ╠═1180b41f-d0b8-44ea-af19-78b75ad75102
-# ╠═1e98f0c5-1823-40e9-9724-8d6c38dd9bdd
-# ╠═fc99e7af-096c-4a89-9fa0-32919e506262
+# ╠═4b2cc8b0-98d7-4b32-a521-e4fa440172f9
+# ╟─0cc11185-d090-452e-8f91-e6db9bcbce59
+# ╠═8b0337d5-9c16-428e-830d-ab116c5eb28c
+# ╠═af4fc4a1-b36e-458a-b704-0f3f0628d4fa
+# ╠═170dfc16-66bf-4055-a226-f37cfd3ad368
+# ╠═6be8b9b0-455f-4aa5-980e-27d19d6cf769
 # ╟─35f5c943-5c54-44cd-b6ad-38639904f913
 # ╠═55eba273-0377-4de4-8734-db66ca3e2673
 # ╠═e9df45c7-44aa-40bf-917f-3cd515687bc0
-# ╠═490bdd8e-04d1-4b3e-af7a-b2b63353c495
+# ╠═23a8c3a1-ece4-4971-b818-686eb95c7608
+# ╟─ae799722-2a64-4716-b2ab-de4fa0072261
+# ╠═ff7bac23-36fa-4508-8737-817978d00cec
+# ╠═3acf9f9f-777a-4a30-9521-775ddb0fd567
+# ╟─f41e66e3-86dd-4822-bcb9-c8f133f6a355
 # ╠═df0f3283-cba6-4fd4-b7bf-9f8b10724fe9
-# ╠═e29da57b-daa1-402d-b607-a89af931398b
-# ╠═9bb2b03a-da81-4e2c-8f5f-e187ac2e92a7
-# ╠═9b022437-ab2d-4f5e-bc8d-0e0c45a9c7bb
-# ╟─00000000-0000-0000-0000-000000000001
-# ╟─00000000-0000-0000-0000-000000000002
+# ╠═95e15a38-c17d-4365-8bc0-0774cdfb3127
+# ╟─502dc8ac-ce8c-4fb2-9513-4cc8c7bfd25a
+# ╠═21a48539-4f67-4104-b549-2c96b5f65f00
+# ╠═2dc83a51-4f54-4ff5-85bd-7df41ae2d7e1
+# ╟─6107b1bb-de22-4dd6-ac01-197c92309191
+# ╠═f52cf939-28a8-4470-bfcd-89371e19951a
+# ╠═708fcf2a-a052-4ef3-92bb-60b16a4d778e
+# ╟─228d1f50-81ea-40ff-a67e-5833c6900750
+# ╠═4200aa80-052c-4611-95de-17f13e96d2e9
+# ╠═2c3e6e56-1e7e-4eb0-9000-58fdf8e127cb
+# ╟─d2eb52c3-9916-4f5a-bece-8dbd8c898a39
+# ╠═492da372-39c3-4230-a093-90aaf4f5621c
+# ╠═8f441a35-b518-4a5c-a49b-f19d9ed2eef2
+# ╟─3df8ef4c-d0af-4729-b4e2-80a3cc276afd
+# ╠═b99d1a54-20a6-4a73-bd8a-68ebec951e33
+# ╠═9c2450e6-6c24-4e12-a7c9-30264f86ec9c
+# ╟─f56acc68-b977-4cf6-a3d1-1c6c7169fb39
+# ╠═4d37f97b-cbe0-4119-9eb8-d461ec887b52
+# ╠═31d0f61d-3a8d-40c6-bcd4-ff80db9b04e9
+# ╠═5218330b-1a04-4ac6-a140-2656791b8984
+# ╠═3f609a12-99d8-4c5b-af3c-326a34e690b4
+# ╠═73796904-eaf6-47f2-b8e7-2ac537764848
