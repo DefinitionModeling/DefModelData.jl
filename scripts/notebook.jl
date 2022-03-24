@@ -18,6 +18,10 @@ begin
 	using EzXML
 	using JSON
 	using Yawipa
+
+	using ColorSchemes
+	using Plots
+	using StatsPlots
 	
 	using Statistics
 	using WordTokenizers
@@ -528,18 +532,45 @@ md"""
 # Benchmark Dataset Stats
 """
 
+# ╔═╡ bb18cce0-b79f-4427-a152-ba7561c44966
+function one_word(str::String)::Bool
+	return !(length(tokenize(str)) > 1)
+end
+
+# ╔═╡ ebb17d85-98c1-4470-bcd0-69e54278ca9f
+function nonsymbol_token(def::String)::String
+	# return first nonsymbol token from a sentence
+	for token in tokenize(def)
+		if occursin(r"^[a-zA-Z]+$", token)
+			return token
+		end	
+	end
+	return ""
+end
+
+# ╔═╡ aab6c361-1b94-465e-99b0-fa60d5816e05
+function def_analysis(df::DataFrame)::DataFrame
+	# add analysis columns for definition analysis
+	df[!, :first_token] = nonsymbol_token.(df[!, :definition])
+	df[!, :one_word] = one_word.(df[!, :definition])
+	return df
+end
+
 # ╔═╡ d2955e46-e745-45ba-a744-531302ca8394
 md"""
 ## Noraset Stats
 """
 
 # ╔═╡ f39371ab-77ed-4633-9f37-43c50e01e7ee
-nora_df, nora_poly = readNoraset();
+begin
+	nora_df, nora_poly = readNoraset();
+	nora_df = def_analysis(nora_df);
+end
 
 # ╔═╡ 60d8d452-b6ec-49d2-a138-00003dd0fc4b
 begin
 	nora_stats = merge(dataset_stats(nora_df), polyseme_stats(nora_poly))
-	nora_stats["dataset"] = "gcide/wordnet-noraset"
+	nora_stats["dataset"] = "wordnet-noraset"
 	nora_stats
 end
 
@@ -554,12 +585,15 @@ md"""
 """
 
 # ╔═╡ df0f3283-cba6-4fd4-b7bf-9f8b10724fe9
-oxfordi_df, oxfordi_poly = readIshiwatari("oxford");
+begin
+	oxfordi_df, oxfordi_poly = readIshiwatari("oxford");
+	oxfordi_df = def_analysis(oxfordi_df);
+end
 
 # ╔═╡ 95e15a38-c17d-4365-8bc0-0774cdfb3127
 begin
 	oxfordi_stats = merge(dataset_stats(oxfordi_df), polyseme_stats(oxfordi_poly))
-	oxfordi_stats["dataset"] = "oxford-ishi"
+	oxfordi_stats["dataset"] = "oxford-gadetsky"
 	oxfordi_stats
 end
 
@@ -569,12 +603,15 @@ md"""
 """
 
 # ╔═╡ 21a48539-4f67-4104-b549-2c96b5f65f00
-slangi_df, slangi_polys = readIshiwatari("slang2");
+begin
+	slangi_df, slangi_polys = readIshiwatari("slang2");
+	slangi_df = def_analysis(slangi_df);
+end
 
 # ╔═╡ 2dc83a51-4f54-4ff5-85bd-7df41ae2d7e1
 begin
 	slangi_stats = merge(dataset_stats(slangi_df), polyseme_stats(slangi_polys))
-	slangi_stats["dataset"] = "urban-ishi"
+	slangi_stats["dataset"] = "urban-ni"
 	slangi_stats
 end
 
@@ -584,7 +621,10 @@ md"""
 """
 
 # ╔═╡ f52cf939-28a8-4470-bfcd-89371e19951a
-wikii_df, wikii_polys = readIshiwatari("wiki");
+begin
+	wikii_df, wikii_polys = readIshiwatari("wiki");
+	wikii_df = def_analysis(wikii_df);
+end
 
 # ╔═╡ 708fcf2a-a052-4ef3-92bb-60b16a4d778e
 begin
@@ -599,7 +639,10 @@ md"""
 """
 
 # ╔═╡ 4200aa80-052c-4611-95de-17f13e96d2e9
-wordneti_df, wordneti_polys = readIshiwatari("wordnet");
+begin
+	wordneti_df, wordneti_polys = readIshiwatari("wordnet");
+	wordneti_df = def_analysis(wordneti_df);
+end
 
 # ╔═╡ 2c3e6e56-1e7e-4eb0-9000-58fdf8e127cb
 begin
@@ -619,7 +662,10 @@ md"""
 """
 
 # ╔═╡ 8a8623b0-70d1-4f69-9804-d2963d18b8ef
-wordnetk_df, wordnetk_polys = readKabiri("WordNet/2-Reconstructed-Downsampled");
+begin
+	wordnetk_df, wordnetk_polys = readKabiri("WordNet/2-Reconstructed-Downsampled");
+	wordnetk_df = def_analysis(wordnetk_df);
+end
 
 # ╔═╡ 2a0a3d9c-bbcd-4fd7-b6c6-fe3302a035ef
 begin
@@ -634,12 +680,15 @@ md"""
 """
 
 # ╔═╡ 741971a7-726c-48a3-81e1-a9653467c3b8
-wiktionaryk_df, wiktionaryk_polys = readKabiri("Wiktionary/2-reconstructed-downsampled");
+begin
+	wiktionaryk_df, wiktionaryk_polys = readKabiri("Wiktionary/2-reconstructed-downsampled");
+	wiktionaryk_df = def_analysis(wiktionaryk_df);
+end
 
 # ╔═╡ 57f7faf7-347e-430e-9f4f-6f2c993e826e
 begin
 	wiktionaryk_stats = merge(dataset_stats(wiktionaryk_df), polyseme_stats(wiktionaryk_polys))
-	wiktionaryk_stats["dataset"] = "wiktionary-eng-kabiri"
+	wiktionaryk_stats["dataset"] = "wiktionary-kabiri"
 	wiktionaryk_stats
 end
 
@@ -649,7 +698,10 @@ md"""
 """
 
 # ╔═╡ a600c797-7d09-47c1-8ca3-c872ec19fd78
-omegak_df, omegak_polys = readKabiri("Omega/2-reconstructed-downsampled");
+begin
+	omegak_df, omegak_polys = readKabiri("Omega/2-reconstructed-downsampled");
+	omegak_df = def_analysis(omegak_df);
+end
 
 # ╔═╡ 99ae3b96-03e3-45fb-86f9-ce61fc24bd82
 begin
@@ -669,7 +721,10 @@ md"""
 """
 
 # ╔═╡ d3be4181-674e-46d9-b39b-9782e42790b0
-hei_df, hei_polys = readBevilacqua();
+begin
+	hei_df, hei_polys = readBevilacqua();
+	hei_df = def_analysis(hei_df);
+end
 
 # ╔═╡ 715f81ab-c5fc-4a99-aaab-3e034c0dea43
 begin
@@ -684,19 +739,19 @@ md"""
 """
 
 # ╔═╡ a61e7f6c-c553-4494-9c60-10b6543bf586
-md"""
-### Oxford Dataset Stats
-"""
+# md"""
+# ### Oxford Dataset Stats
+# """
 
 # ╔═╡ d02bf5b4-9017-4177-8937-0a2eef03bff5
-oxfordr_df, oxfordr_polys = readReid("oxford");
+# oxfordr_df, oxfordr_polys = readReid("oxford");
 
 # ╔═╡ 6ae940c0-11a1-4d30-a2ea-9779587005ce
-begin
-	oxfordr_stats = merge(dataset_stats(oxfordr_df), polyseme_stats(oxfordr_polys))
-	oxfordr_stats["dataset"] = "oxford-reid"
-	oxfordr_stats
-end
+# begin
+# 	oxfordr_stats = merge(dataset_stats(oxfordr_df), polyseme_stats(oxfordr_polys))
+# 	oxfordr_stats["dataset"] = "oxford-reid"
+# 	oxfordr_stats
+# end
 
 # ╔═╡ 3fe96326-37eb-4996-b8ea-9557af0b5516
 md"""
@@ -704,14 +759,14 @@ md"""
 """
 
 # ╔═╡ a83e980e-f826-4c20-826b-017f067512a6
-wikir_df, wikir_polys = readReid("wiki");
+# wikir_df, wikir_polys = readReid("wiki");
 
 # ╔═╡ 9072c532-9da3-4c11-9cbe-532de868b2e8
-begin
-	wikir_stats = merge(dataset_stats(wikir_df), polyseme_stats(wikir_polys))
-	wikir_stats["dataset"] = "wikipedia-reid"
-	wikir_stats
-end
+# begin
+# 	wikir_stats = merge(dataset_stats(wikir_df), polyseme_stats(wikir_polys))
+# 	wikir_stats["dataset"] = "wikipedia-reid"
+# 	wikir_stats
+# end
 
 # ╔═╡ 39de496c-9d01-4a8e-bd98-f74ea45f5ff7
 md"""
@@ -719,14 +774,14 @@ md"""
 """
 
 # ╔═╡ 2fefd8da-9906-4e8e-826c-761a50b0b633
-slangr_df, slangr_polys = readReid("slang");
+# slangr_df, slangr_polys = readReid("slang");
 
 # ╔═╡ 56ee17bb-f197-41a6-98fe-9fd0bef87278
-begin
-	slangr_stats = merge(dataset_stats(slangr_df), polyseme_stats(slangr_polys))
-	slangr_stats["dataset"] = "urban-reid"
-	slangr_stats
-end
+# begin
+# 	slangr_stats = merge(dataset_stats(slangr_df), polyseme_stats(slangr_polys))
+# 	slangr_stats["dataset"] = "urban-reid"
+# 	slangr_stats
+# end
 
 # ╔═╡ f7eb3e18-5217-4b6e-b178-575f04e8b650
 md"""
@@ -809,9 +864,9 @@ begin
 			
 			DataFrame(hei_stats),
 			
-			DataFrame(oxfordr_stats),
-			DataFrame(wikir_stats),
-			DataFrame(slangr_stats),
+			# DataFrame(oxfordr_stats),
+			# DataFrame(wikir_stats),
+			# DataFrame(slangr_stats),
 		), [
 			:dataset, :num_words, :num_definitions, :definitions_per_word, :num_polysemes, :polyseme_ratio,
 			:average_definition_length, :stddev_definition_length,
@@ -859,21 +914,22 @@ begin
 		wiktionaryk_df,
 		omegak_df,
 		
-		hei_df,
+		# hei_df,
 	]
 
 	df_names = [
-		"nora_df",
-		"oxfordi_df",
-		"wordneti_df",
-		"wikii_df",
-		"slangi_df",
-
-		"wordnetk_df",
-		"wiktionaryk_df",
-		"omegak_df",
+		nora_stats["dataset"],
 		
-		"hei_df",
+		oxfordi_stats["dataset"],
+		wordneti_stats["dataset"],
+		wikii_stats["dataset"],
+		slangi_stats["dataset"],
+
+		wordnetk_stats["dataset"],
+		wiktionaryk_stats["dataset"],
+		omegak_stats["dataset"],
+		
+		# hei_stats["dataset"],
 	]
 
 	df = DataFrame(df1 = String[], df2 = String[], overlap_pct = Float64[])
@@ -889,12 +945,96 @@ begin
 		end
 	end
 	
-	df
+	sort(df, :overlap_pct, rev = true)
 end
 
-# ╔═╡ 0260a276-45ae-4f66-8db0-92926c185042
+# ╔═╡ 76a4cc6e-969e-4bc4-a193-39b5c5aafba0
 begin
-	odfs = [
+	# count words by number of appearances in each set (multiple appearances in a single set ignored)
+	words = [
+		unique(nora_df.word),
+
+		unique(oxfordi_df.word),
+		unique(wordneti_df.word),
+		unique(wikii_df.word),
+		unique(slangi_df.word),
+
+		unique(wordnetk_df.word),
+		unique(wiktionaryk_df.word),
+		unique(omegak_df.word),
+	]
+	words = vcat(words...)
+	words_df = DataFrame(word=String[])
+	for word in words
+		push!(words_df, (word,))
+	end
+	
+	gdf = groupby(words_df, :word)
+	word_counts = combine(gdf) do sdf
+		DataFrame(counts = length(sdf.word))
+	end
+
+	word_counts = filter(row -> row.counts >= 7, word_counts)
+	sort(word_counts, :counts, rev = true)
+end
+
+# ╔═╡ 8b098243-2467-40fb-9836-3750008312d1
+function smallbar(df::DataFrame)
+	groupedbar(
+		df.df1,
+		df.overlap_pct,
+		group=df.df2,
+		ylabel="Overlap (%)",
+		xrotation=20,
+		legend=:topleft,
+		palette = palette(:Dark2_8),
+	)
+end
+
+# ╔═╡ 4b351ddc-0927-4128-aaf4-43794a845762
+begin
+	grp1 = [
+		omegak_stats["dataset"],
+		wordneti_stats["dataset"],
+		wordnetk_stats["dataset"],
+		oxfordi_stats["dataset"],
+	]
+end
+
+# ╔═╡ 6654623f-0ae9-4c5f-8820-5957b87f0225
+begin
+	smallbar(filter(row -> row.df1 ∈ grp1, df))
+end
+
+# ╔═╡ d52396b4-40b0-42cb-ba46-c8be7fcf7799
+palette(:Accent_8)
+
+# ╔═╡ 310b2b16-7c2d-43c1-a47a-17b0f1e58bad
+begin
+	smallbar(filter(row -> row.df1 ∉ grp1, df))
+end
+
+# ╔═╡ ac35abd6-2e14-40bc-9f08-0b82d7b33ee1
+md"""
+# Definition Analysis
+"""
+
+# ╔═╡ 11340b42-4a3d-4b3e-993e-6adb29e40337
+# provide analysis of definitions that contain synonym 'of' as first word
+
+# ╔═╡ b4cb80f5-ff4b-4b87-8442-bb57e0ba0884
+function contains_of(word::String)::Bool
+	return word ∈ ["of", "about", "like"]
+end
+
+# ╔═╡ 75325322-d3b1-4fac-85ca-dc9c5b3f4a7a
+function get_ofs(df::DataFrame)::Int
+	return sum(contains_of.(df[!, :first_token]))
+end
+
+# ╔═╡ 9f5ff836-df46-4214-8212-22edd21054d8
+begin
+	defdfs = [
 		nora_df,
 		
 		oxfordi_df,
@@ -905,14 +1045,51 @@ begin
 		wordnetk_df,
 		wiktionaryk_df,
 		omegak_df,
+		
+		hei_df,
 	]
-	
-	# get words that exist in every df
-	overlap_words = get_overlap(odfs[1], odfs[1])
-	for df in odfs
-		overlap_words = get_overlap(df, overlap_words)
+
+	defdf_names = [
+		nora_stats["dataset"],
+		
+		oxfordi_stats["dataset"],
+		wordneti_stats["dataset"],
+		wikii_stats["dataset"],
+		slangi_stats["dataset"],
+
+		wordnetk_stats["dataset"],
+		wiktionaryk_stats["dataset"],
+		omegak_stats["dataset"],
+		
+		hei_stats["dataset"],
+	]
+
+	defdf = DataFrame(ds=String[], num_ofs=Int[], pct_ofs=Float64[])
+	for (data, name) in zip(defdfs, defdf_names)
+		num_ofs = get_ofs(data)
+		pct_ofs = num_ofs / length(data.definition)
+		push!(defdf, (
+			name,
+			num_ofs,
+			pct_ofs,
+		))
 	end
-	overlap_words
+
+	defdf
+end
+
+# ╔═╡ ed2e0955-00da-4dc4-880c-52133e36884b
+nora_df
+
+# ╔═╡ 416c7df0-997f-416c-8af0-392dd6522348
+begin
+	# most common first token
+	gdf2 = groupby(nora_df, :first_token)
+	tk_counts = combine(gdf) do sdf
+		DataFrame(counts = length(sdf.first_token))
+	end
+
+	tk_counts
 end
 
 # ╔═╡ Cell order:
@@ -963,6 +1140,9 @@ end
 # ╠═e9df45c7-44aa-40bf-917f-3cd515687bc0
 # ╠═23a8c3a1-ece4-4971-b818-686eb95c7608
 # ╟─1d0fb198-1d89-443e-881d-4ecd64673fb8
+# ╠═bb18cce0-b79f-4427-a152-ba7561c44966
+# ╠═ebb17d85-98c1-4470-bcd0-69e54278ca9f
+# ╠═aab6c361-1b94-465e-99b0-fa60d5816e05
 # ╟─d2955e46-e745-45ba-a744-531302ca8394
 # ╠═f39371ab-77ed-4633-9f37-43c50e01e7ee
 # ╠═60d8d452-b6ec-49d2-a138-00003dd0fc4b
@@ -1023,4 +1203,16 @@ end
 # ╠═0eceade1-9c17-47bb-a6d5-ec0749bcd94a
 # ╠═45777214-a1b6-4eb6-ba23-ff3cae415d54
 # ╠═02a18190-3955-463a-8bad-fd7f92257075
-# ╠═0260a276-45ae-4f66-8db0-92926c185042
+# ╠═76a4cc6e-969e-4bc4-a193-39b5c5aafba0
+# ╠═8b098243-2467-40fb-9836-3750008312d1
+# ╠═4b351ddc-0927-4128-aaf4-43794a845762
+# ╠═6654623f-0ae9-4c5f-8820-5957b87f0225
+# ╠═d52396b4-40b0-42cb-ba46-c8be7fcf7799
+# ╠═310b2b16-7c2d-43c1-a47a-17b0f1e58bad
+# ╟─ac35abd6-2e14-40bc-9f08-0b82d7b33ee1
+# ╠═11340b42-4a3d-4b3e-993e-6adb29e40337
+# ╠═b4cb80f5-ff4b-4b87-8442-bb57e0ba0884
+# ╠═75325322-d3b1-4fac-85ca-dc9c5b3f4a7a
+# ╠═9f5ff836-df46-4214-8212-22edd21054d8
+# ╠═ed2e0955-00da-4dc4-880c-52133e36884b
+# ╠═416c7df0-997f-416c-8af0-392dd6522348
