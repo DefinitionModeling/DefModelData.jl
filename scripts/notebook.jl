@@ -883,6 +883,19 @@ md"""
 # Analysis
 """
 
+# ╔═╡ d9e23ae2-bf40-46e4-85a4-225912d4cbe4
+begin
+	poly_stats_df = sort(stats_df, :polyseme_ratio, rev=true)
+	polysemes_plot = bar(
+		poly_stats_df.dataset,
+		poly_stats_df.polyseme_ratio,
+		ylabel="Polysemous phrases (%)",
+		xrotation=20,
+		legend=false,
+		palette = palette(:Dark2_8),
+	)
+end
+
 # ╔═╡ 91dff8f9-e826-465b-9cd4-2666b2c972cf
 function get_overlap(df1::DataFrame, df2::DataFrame)::Vector{String}
 	overlap = intersect(df1.word, df2.word)
@@ -897,7 +910,10 @@ end
 # ╔═╡ 45777214-a1b6-4eb6-ba23-ff3cae415d54
 function get_overlap_percent(df1::DataFrame, df2::DataFrame)::Float64
 	# get overlapping word as percentage of total words in df1
-	return 100*length(get_overlap(df1, df2))/length(df1.word)
+	return round(
+		100*length(get_overlap(df1, df2))/length(df1.word),
+		digits=2,
+	)
 end
 
 # ╔═╡ 02a18190-3955-463a-8bad-fd7f92257075
@@ -962,6 +978,8 @@ begin
 		unique(wordnetk_df.word),
 		unique(wiktionaryk_df.word),
 		unique(omegak_df.word),
+		
+		unique(hei_df.word),
 	]
 	words = vcat(words...)
 	words_df = DataFrame(word=String[])
@@ -974,9 +992,29 @@ begin
 		DataFrame(counts = length(sdf.word))
 	end
 
-	word_counts = filter(row -> row.counts >= 7, word_counts)
-	sort(word_counts, :counts, rev = true)
+	# word_counts = filter(row -> row.counts >= 7, word_counts)
+	word_counts = sort(word_counts, [:word])
+	word_counts = sort(word_counts, [:counts], rev = true)
 end
+
+# ╔═╡ 1b645f58-6f5c-43f4-a759-4b9aff02c921
+begin
+	# get number of each count
+	num_counts = combine(groupby(word_counts, :counts)) do sdf
+		DataFrame(num_count = length(sdf.counts))
+	end
+end
+
+# ╔═╡ 3c38e58f-c9b8-41ed-bbdb-73738295aeaf
+unique_counts_plot = bar(
+	num_counts.counts,
+	num_counts.num_count,
+	ylabel="Number",
+	legend=false,
+	palette = palette(:Dark2_8),
+	yaxis=:log,
+	yticks = [1, 10, 100, 1000, 10000, 100000]
+)
 
 # ╔═╡ 8b098243-2467-40fb-9836-3750008312d1
 function smallbar(df::DataFrame)
@@ -985,6 +1023,7 @@ function smallbar(df::DataFrame)
 		df.overlap_pct,
 		group=df.df2,
 		ylabel="Overlap (%)",
+		ylims=(0, 55),
 		xrotation=20,
 		legend=:topleft,
 		palette = palette(:Dark2_8),
@@ -992,35 +1031,59 @@ function smallbar(df::DataFrame)
 end
 
 # ╔═╡ 4b351ddc-0927-4128-aaf4-43794a845762
+grp1 = [
+	omegak_stats["dataset"],
+	wordneti_stats["dataset"],
+	wordnetk_stats["dataset"],
+	oxfordi_stats["dataset"],
+]
+
+# ╔═╡ 9dd70ccb-d434-440d-8da5-f1caf3c0dd5d
 begin
-	grp1 = [
-		omegak_stats["dataset"],
-		wordneti_stats["dataset"],
-		wordnetk_stats["dataset"],
-		oxfordi_stats["dataset"],
-	]
+	overlap_all_plot = smallbar(df)
 end
 
 # ╔═╡ 6654623f-0ae9-4c5f-8820-5957b87f0225
 begin
-	smallbar(filter(row -> row.df1 ∈ grp1, df))
+	overlap_group1_plot = smallbar(filter(row -> row.df1 ∈ grp1, df))
 end
-
-# ╔═╡ d52396b4-40b0-42cb-ba46-c8be7fcf7799
-palette(:Accent_8)
 
 # ╔═╡ 310b2b16-7c2d-43c1-a47a-17b0f1e58bad
 begin
-	smallbar(filter(row -> row.df1 ∉ grp1, df))
+	overlap_group2_plot = smallbar(filter(row -> row.df1 ∉ grp1, df))
 end
+
+# ╔═╡ 90df4f9b-ad6b-4b49-bc7e-18d66e251332
+groupby(df, :df1)
+
+# ╔═╡ 3eba3f16-d7d9-4af2-907d-38c445d7a978
+# average overlap
+begin
+	groupby(df, :df1)
+	avg_overlaps = combine(groupby(df, :df1)) do sdf
+		DataFrame(avg_overlap = round(
+			sum(sdf.overlap_pct) / length(sdf.overlap_pct),
+			digits=2,
+		))
+	end
+	push!(avg_overlaps, (hei_stats["dataset"], 0.0))
+	sorted_overlaps = sort(avg_overlaps, :avg_overlap, rev=true)
+end
+
+# ╔═╡ d5f4a207-a5dc-4636-96fd-d6eb37a16c8d
+avg_overlap_plot = bar(
+	sorted_overlaps.df1,
+	sorted_overlaps.avg_overlap,
+	ylabel="Average overlap (%)",
+	xrotation=20,
+	legend=false,
+	palette = palette(:Dark2_8),
+)
 
 # ╔═╡ ac35abd6-2e14-40bc-9f08-0b82d7b33ee1
 md"""
 # Definition Analysis
 """
-
-# ╔═╡ 11340b42-4a3d-4b3e-993e-6adb29e40337
-# provide analysis of definitions that contain synonym 'of' as first word
 
 # ╔═╡ b4cb80f5-ff4b-4b87-8442-bb57e0ba0884
 function contains_of(word::String)::Bool
@@ -1064,32 +1127,88 @@ begin
 		hei_stats["dataset"],
 	]
 
-	defdf = DataFrame(ds=String[], num_ofs=Int[], pct_ofs=Float64[])
+	defdf = DataFrame(
+		ds=String[],
+		num_ofs=Int[],
+		pct_ofs=Float64[],
+		num_singles=Int[],
+		pct_singles=Float64[],
+	)
 	for (data, name) in zip(defdfs, defdf_names)
 		num_ofs = get_ofs(data)
-		pct_ofs = num_ofs / length(data.definition)
+		pct_ofs = 100*num_ofs / length(data.definition)
+
+		num_singles = sum(data.one_word)
+		pct_singles = 100*num_singles / length(data.definition)
 		push!(defdf, (
 			name,
 			num_ofs,
-			pct_ofs,
+			round(pct_ofs, digits=2),
+			num_singles,
+			round(pct_singles, digits=2),
 		))
 	end
 
 	defdf
 end
 
-# ╔═╡ ed2e0955-00da-4dc4-880c-52133e36884b
-nora_df
+# ╔═╡ ffa82e4d-71f0-4066-8f64-1178d35ca285
+sort(select(
+	defdf,
+	[
+		:ds, :num_ofs, :pct_ofs,
+	]
+), :pct_ofs, rev = true)
+
+# ╔═╡ 0effd27e-d000-4aad-b7db-1dbebdc2dceb
+singles_df = sort(select(
+	defdf,
+	[
+		:ds, :num_singles, :pct_singles,
+	]
+), :pct_singles, rev = true)
+
+# ╔═╡ f685fb61-9b86-4a2b-93bc-41d5f8bba763
+single_word_plot = bar(
+	singles_df.ds,
+	singles_df.pct_singles,
+	ylabel="Single-word definition (%)",
+	xrotation=20,
+	legend=false,
+	palette = palette(:Dark2_8),
+)
 
 # ╔═╡ 416c7df0-997f-416c-8af0-392dd6522348
 begin
 	# most common first token
 	gdf2 = groupby(nora_df, :first_token)
-	tk_counts = combine(gdf) do sdf
+	tk_counts = combine(gdf2) do sdf
 		DataFrame(counts = length(sdf.first_token))
 	end
 
-	tk_counts
+	sort(tk_counts, :counts, rev = true)
+end
+
+# ╔═╡ c0a4dd46-1c34-42dc-b43e-cc3f766908f0
+poly_stats_df
+
+# ╔═╡ 0352744e-6621-4e3d-92ec-19861300c919
+groupby(df, :df1)
+
+# ╔═╡ 035bc2ee-3b04-4c39-8100-cf6e311b14d2
+sorted_overlaps
+
+# ╔═╡ 975750c2-9130-444e-a619-29e690ac6735
+begin
+	out_path = "./plots"
+	mkpath(out_path)
+	savefig(polysemes_plot, string(out_path, "/polysemes_plot.png"))
+	savefig(overlap_group1_plot, string(out_path, "/overlap_group1.png"))
+	savefig(overlap_group2_plot, string(out_path, "/overlap_group2.png"))
+	savefig(overlap_all_plot, string(out_path, "/overlap_all.png"))
+	savefig(avg_overlap_plot, string(out_path, "/avg_overlap.png"))
+	savefig(single_word_plot, string(out_path, "/single_word.png"))
+	savefig(unique_counts_plot, string(out_path, "/unique_counts.png"))
 end
 
 # ╔═╡ Cell order:
@@ -1199,20 +1318,31 @@ end
 # ╠═5218330b-1a04-4ac6-a140-2656791b8984
 # ╠═3f609a12-99d8-4c5b-af3c-326a34e690b4
 # ╟─2ac8b154-2f37-472b-bf79-a73d6f0c37d9
+# ╠═d9e23ae2-bf40-46e4-85a4-225912d4cbe4
 # ╠═91dff8f9-e826-465b-9cd4-2666b2c972cf
 # ╠═0eceade1-9c17-47bb-a6d5-ec0749bcd94a
 # ╠═45777214-a1b6-4eb6-ba23-ff3cae415d54
 # ╠═02a18190-3955-463a-8bad-fd7f92257075
 # ╠═76a4cc6e-969e-4bc4-a193-39b5c5aafba0
+# ╠═1b645f58-6f5c-43f4-a759-4b9aff02c921
+# ╠═3c38e58f-c9b8-41ed-bbdb-73738295aeaf
 # ╠═8b098243-2467-40fb-9836-3750008312d1
 # ╠═4b351ddc-0927-4128-aaf4-43794a845762
+# ╠═9dd70ccb-d434-440d-8da5-f1caf3c0dd5d
 # ╠═6654623f-0ae9-4c5f-8820-5957b87f0225
-# ╠═d52396b4-40b0-42cb-ba46-c8be7fcf7799
 # ╠═310b2b16-7c2d-43c1-a47a-17b0f1e58bad
+# ╠═90df4f9b-ad6b-4b49-bc7e-18d66e251332
+# ╠═3eba3f16-d7d9-4af2-907d-38c445d7a978
+# ╠═d5f4a207-a5dc-4636-96fd-d6eb37a16c8d
 # ╟─ac35abd6-2e14-40bc-9f08-0b82d7b33ee1
-# ╠═11340b42-4a3d-4b3e-993e-6adb29e40337
 # ╠═b4cb80f5-ff4b-4b87-8442-bb57e0ba0884
 # ╠═75325322-d3b1-4fac-85ca-dc9c5b3f4a7a
 # ╠═9f5ff836-df46-4214-8212-22edd21054d8
-# ╠═ed2e0955-00da-4dc4-880c-52133e36884b
+# ╠═ffa82e4d-71f0-4066-8f64-1178d35ca285
+# ╠═0effd27e-d000-4aad-b7db-1dbebdc2dceb
+# ╠═f685fb61-9b86-4a2b-93bc-41d5f8bba763
 # ╠═416c7df0-997f-416c-8af0-392dd6522348
+# ╠═c0a4dd46-1c34-42dc-b43e-cc3f766908f0
+# ╠═0352744e-6621-4e3d-92ec-19861300c919
+# ╠═035bc2ee-3b04-4c39-8100-cf6e311b14d2
+# ╠═975750c2-9130-444e-a619-29e690ac6735
